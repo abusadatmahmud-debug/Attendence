@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Office Attendance</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap');
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0f1117; --surface: #1a1d27; --card: #21243a; --border: #2e3248;
+    --accent: #4f6ef7; --accent-soft: rgba(79,110,247,0.12);
+    --green: #22c55e; --green-soft: rgba(34,197,94,0.12);
+    --red: #ef4444; --red-soft: rgba(239,68,68,0.12);
+    --yellow: #f59e0b; --text: #e8eaf0; --muted: #6b7280; --radius: 16px;
+  }
+  body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; min-height: 100vh; display: flex; flex-direction: column; }
+
+  .header { padding: 20px 20px 0; display: flex; align-items: center; justify-content: space-between; }
+  .header-left h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.3px; }
+  .header-left p { font-size: 12px; color: var(--muted); margin-top: 2px; font-family: 'JetBrains Mono', monospace; }
+  .live-clock { font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--accent); background: var(--accent-soft); padding: 6px 12px; border-radius: 8px; font-weight: 500; }
+  .header-right { display: flex; align-items: center; gap: 8px; }
+  .settings-btn { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; font-size: 16px; cursor: pointer; line-height: 1; }
+
+  .config-banner { margin: 16px 20px 0; background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3); border-radius: 12px; padding: 12px 16px; display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--yellow); }
+  .config-banner.hidden { display: none; }
+  .config-banner span { flex: 1; }
+  .config-btn { background: var(--yellow); color: #000; border: none; border-radius: 8px; padding: 6px 12px; font-size: 12px; font-weight: 600; cursor: pointer; }
+
+  .section-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); padding: 20px 20px 10px; }
+
+  .employees { padding: 0 20px; display: flex; flex-direction: column; gap: 10px; }
+  .emp-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; display: flex; align-items: center; gap: 14px; cursor: pointer; transition: border-color 0.2s, background 0.2s; -webkit-tap-highlight-color: transparent; }
+  .emp-card:active { background: var(--card); }
+  .emp-avatar { width: 46px; height: 46px; border-radius: 50%; background: var(--accent-soft); border: 2px solid var(--accent); display: flex; align-items: center; justify-content: center; font-size: 17px; font-weight: 700; color: var(--accent); flex-shrink: 0; }
+  .emp-info { flex: 1; }
+  .emp-name { font-size: 15px; font-weight: 600; letter-spacing: -0.2px; }
+  .emp-status { font-size: 12px; margin-top: 3px; color: var(--muted); }
+  .emp-status.in { color: var(--green); }
+  .emp-badge { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); opacity: 0.4; }
+  .emp-badge.in { background: var(--green); opacity: 1; box-shadow: 0 0 8px var(--green); }
+
+  /* Action modal */
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); z-index: 100; align-items: flex-end; justify-content: center; }
+  .modal-overlay.show { display: flex; }
+  .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 24px 24px 0 0; padding: 24px 24px 40px; width: 100%; max-width: 480px; animation: slideUp 0.25s ease; }
+  @keyframes slideUp { from { transform: translateY(40px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+  .modal-handle { width: 40px; height: 4px; background: var(--border); border-radius: 2px; margin: 0 auto 20px; }
+  .modal-name { font-size: 20px; font-weight: 700; text-align: center; letter-spacing: -0.3px; }
+  .modal-subtitle { font-size: 13px; color: var(--muted); text-align: center; margin-top: 4px; }
+
+  /* Verify area — shows fingerprint OR pin tabs */
+  .verify-tabs { display: flex; gap: 8px; margin: 20px 0 0; }
+  .vtab { flex: 1; padding: 10px; border-radius: 10px; border: 1px solid var(--border); background: transparent; color: var(--muted); font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+  .vtab.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+
+  .verify-panel { display: none; }
+  .verify-panel.active { display: block; }
+
+  /* Fingerprint */
+  .fp-area { margin: 20px 0; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  .fp-ring { width: 90px; height: 90px; border-radius: 50%; border: 2px solid var(--border); display: flex; align-items: center; justify-content: center; transition: border-color 0.3s; }
+  .fp-ring.scanning { border-color: var(--accent); animation: pulse-ring 1s ease infinite; }
+  .fp-ring.success { border-color: var(--green); }
+  .fp-ring.error { border-color: var(--red); }
+  @keyframes pulse-ring { 0%,100% { box-shadow: 0 0 0 0 rgba(79,110,247,0.3); } 50% { box-shadow: 0 0 0 12px rgba(79,110,247,0); } }
+  .fp-icon { font-size: 44px; }
+  .fp-label { font-size: 12px; color: var(--muted); text-align: center; }
+  .fp-label.scanning { color: var(--accent); }
+  .fp-label.success { color: var(--green); }
+  .fp-label.error { color: var(--red); }
+
+  /* PIN pad */
+  .pin-area { margin: 16px 0; }
+  .pin-dots { display: flex; justify-content: center; gap: 14px; margin-bottom: 20px; }
+  .pin-dot { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--border); background: transparent; transition: all 0.2s; }
+  .pin-dot.filled { background: var(--accent); border-color: var(--accent); }
+  .pin-dot.error { background: var(--red); border-color: var(--red); animation: shake 0.3s ease; }
+  .pin-dot.success { background: var(--green); border-color: var(--green); }
+  @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-4px)} 75%{transform:translateX(4px)} }
+
+  .pin-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .pin-key { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px 10px; font-size: 20px; font-weight: 600; color: var(--text); cursor: pointer; text-align: center; transition: background 0.15s; -webkit-tap-highlight-color: transparent; user-select: none; }
+  .pin-key:active { background: var(--border); }
+  .pin-key.del { font-size: 16px; color: var(--muted); }
+  .pin-key.empty { background: transparent; border-color: transparent; cursor: default; }
+
+  /* Action buttons */
+  .action-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; margin-top: 20px; }
+  .btn-checkin { background: var(--green-soft); border: 1px solid var(--green); color: var(--green); border-radius: 12px; padding: 14px; font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; transition: background 0.2s; }
+  .btn-checkin:active { background: rgba(34,197,94,0.25); }
+  .btn-checkout { background: var(--red-soft); border: 1px solid var(--red); color: var(--red); border-radius: 12px; padding: 14px; font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; }
+  .btn-checkout:active { background: rgba(239,68,68,0.25); }
+  .btn-cancel { width: 100%; background: transparent; border: 1px solid var(--border); color: var(--muted); border-radius: 12px; padding: 13px; font-size: 14px; font-weight: 500; cursor: pointer; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* Log table */
+  .log-section { padding: 20px 20px 30px; }
+  .log-table { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  .log-row { display: grid; grid-template-columns: 1fr 70px 70px 70px; padding: 11px 14px; font-size: 12px; border-bottom: 1px solid var(--border); align-items: center; gap: 4px; }
+  .log-row:last-child { border-bottom: none; }
+  .log-row.header { color: var(--muted); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; background: var(--card); }
+  .log-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .log-time { font-family: 'JetBrains Mono', monospace; color: var(--muted); font-size: 11px; }
+  .log-hours { font-family: 'JetBrains Mono', monospace; color: var(--accent); font-size: 11px; font-weight: 600; }
+  .log-empty { padding: 20px; text-align: center; color: var(--muted); font-size: 13px; }
+
+  /* Config modal */
+  .config-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8); backdrop-filter: blur(4px); z-index: 200; align-items: center; justify-content: center; padding: 20px; }
+  .config-modal.show { display: flex; }
+  .config-box { background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 24px; width: 100%; max-width: 400px; }
+  .config-box h2 { font-size: 17px; font-weight: 700; margin-bottom: 6px; }
+  .config-box p { font-size: 12px; color: var(--muted); margin-bottom: 16px; line-height: 1.6; }
+  .config-input { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; color: var(--text); font-size: 13px; font-family: 'JetBrains Mono', monospace; margin-bottom: 12px; outline: none; }
+  .config-input:focus { border-color: var(--accent); }
+  .config-save { width: 100%; background: var(--accent); border: none; border-radius: 10px; padding: 13px; color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; }
+  .config-row { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; }
+  .config-label { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+
+  /* PIN setup section inside config */
+  .pin-setup-dots { display: flex; gap: 10px; margin-bottom: 10px; }
+  .pin-setup-dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--border); background: transparent; }
+  .pin-setup-dot.filled { background: var(--accent); border-color: var(--accent); }
+
+  /* Toast */
+  .toast { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%) translateY(80px); background: var(--card); border: 1px solid var(--border); border-radius: 100px; padding: 12px 20px; font-size: 13px; font-weight: 500; white-space: nowrap; transition: transform 0.3s ease; z-index: 999; }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+  .toast.success { border-color: var(--green); color: var(--green); }
+  .toast.error { border-color: var(--red); color: var(--red); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <h1>🏢 Attendance</h1>
+    <p id="dateDisplay"></p>
+  </div>
+  <div class="header-right">
+    <div class="live-clock" id="clockDisplay">--:--:--</div>
+    <button class="settings-btn" onclick="openConfig()" title="Settings">⚙️</button>
+  </div>
+</div>
+
+<div class="config-banner" id="configBanner">
+  <span>⚠️ Google Sheet URL not set</span>
+  <button class="config-btn" onclick="openConfig()">Setup</button>
+</div>
+
+<div class="section-label">Select Employee</div>
+<div class="employees" id="employeeList"></div>
+
+<div class="section-label">Today's Log</div>
+<div class="log-section">
+  <div class="log-table">
+    <div class="log-row header">
+      <div>Name</div><div>In</div><div>Out</div><div>Hours</div>
+    </div>
+    <div id="logBody"></div>
+  </div>
+</div>
+
+<!-- ── Action modal ── -->
+<div class="modal-overlay" id="actionModal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-name" id="modalName">—</div>
+    <div class="modal-subtitle" id="modalSubtitle">Choose action</div>
+
+    <!-- Tabs -->
+    <div class="verify-tabs">
+      <button class="vtab active" id="tabFP" onclick="switchTab('fp')">☝️ Fingerprint</button>
+      <button class="vtab" id="tabPIN" onclick="switchTab('pin')">🔢 PIN</button>
+    </div>
+
+    <!-- Fingerprint panel -->
+    <div class="verify-panel active" id="panelFP">
+      <div class="fp-area">
+        <div class="fp-ring" id="fpRing"><span class="fp-icon" id="fpIcon">☝️</span></div>
+        <div class="fp-label" id="fpLabel">Touch fingerprint sensor to confirm</div>
+      </div>
+    </div>
+
+    <!-- PIN panel -->
+    <div class="verify-panel" id="panelPIN">
+      <div class="pin-area">
+        <div class="pin-dots">
+          <div class="pin-dot" id="d0"></div>
+          <div class="pin-dot" id="d1"></div>
+          <div class="pin-dot" id="d2"></div>
+          <div class="pin-dot" id="d3"></div>
+        </div>
+        <div class="pin-grid">
+          <button class="pin-key" onclick="pinKey('1')">1</button>
+          <button class="pin-key" onclick="pinKey('2')">2</button>
+          <button class="pin-key" onclick="pinKey('3')">3</button>
+          <button class="pin-key" onclick="pinKey('4')">4</button>
+          <button class="pin-key" onclick="pinKey('5')">5</button>
+          <button class="pin-key" onclick="pinKey('6')">6</button>
+          <button class="pin-key" onclick="pinKey('7')">7</button>
+          <button class="pin-key" onclick="pinKey('8')">8</button>
+          <button class="pin-key" onclick="pinKey('9')">9</button>
+          <button class="pin-key empty"></button>
+          <button class="pin-key" onclick="pinKey('0')">0</button>
+          <button class="pin-key del" onclick="pinDel()">⌫</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="action-btns">
+      <button class="btn-checkin" id="btnCheckin" onclick="triggerAction('checkin')">↗ Check In</button>
+      <button class="btn-checkout" id="btnCheckout" onclick="triggerAction('checkout')">↙ Check Out</button>
+    </div>
+    <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+  </div>
+</div>
+
+<!-- ── Config modal ── -->
+<div class="config-modal" id="configModal">
+  <div class="config-box">
+    <h2>⚙️ Setup</h2>
+    <p>Paste your Google Apps Script Web App URL and set your admin PIN.</p>
+
+    <div class="config-label">Google Apps Script URL</div>
+    <input class="config-input" id="urlInput" placeholder="https://script.google.com/macros/s/..." />
+
+    <div class="config-label">Set Admin PIN (4 digits)</div>
+    <div class="pin-setup-dots" id="setupDots">
+      <div class="pin-setup-dot" id="sd0"></div>
+      <div class="pin-setup-dot" id="sd1"></div>
+      <div class="pin-setup-dot" id="sd2"></div>
+      <div class="pin-setup-dot" id="sd3"></div>
+    </div>
+    <div class="pin-grid" style="margin-bottom:14px;">
+      <button class="pin-key" onclick="setupPinKey('1')">1</button>
+      <button class="pin-key" onclick="setupPinKey('2')">2</button>
+      <button class="pin-key" onclick="setupPinKey('3')">3</button>
+      <button class="pin-key" onclick="setupPinKey('4')">4</button>
+      <button class="pin-key" onclick="setupPinKey('5')">5</button>
+      <button class="pin-key" onclick="setupPinKey('6')">6</button>
+      <button class="pin-key" onclick="setupPinKey('7')">7</button>
+      <button class="pin-key" onclick="setupPinKey('8')">8</button>
+      <button class="pin-key" onclick="setupPinKey('9')">9</button>
+      <button class="pin-key empty"></button>
+      <button class="pin-key" onclick="setupPinKey('0')">0</button>
+      <button class="pin-key del" onclick="setupPinDel()">⌫</button>
+    </div>
+
+    <button class="config-save" onclick="saveConfig()">Save & Connect</button>
+    <button class="config-save" onclick="resetToday()" style="margin-top:10px;background:var(--red-soft);border:1px solid var(--red);color:var(--red);">🔄 Reset Today's Data</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const EMPLOYEES = [
+  { id: 1, name: "Sadat Mahmud" },
+  { id: 2, name: "Mir Golam Rabbani" },
+  { id: 3, name: "Abdullah Al Nahiyan" },
+];
+
+let SHEET_URL = localStorage.getItem("sheetURL") || "";
+let ADMIN_PIN  = localStorage.getItem("adminPIN")  || "";
+let selectedEmployee = null;
+let pendingAction = null;
+let currentTab = "fp";
+
+// PIN entry state
+let pinEntry = "";
+let setupPinEntry = "";
+
+// Today log
+let todayLog = JSON.parse(localStorage.getItem("todayLog") || "{}");
+const todayKey = new Date().toLocaleDateString('en-GB');
+if (localStorage.getItem("logDate") !== todayKey) {
+  todayLog = {};
+  localStorage.setItem("todayLog", "{}");
+  localStorage.setItem("logDate", todayKey);
+}
+
+// ── Clock ─────────────────────────────────────────────
+function updateClock() {
+  const now = new Date();
+  document.getElementById("clockDisplay").textContent =
+    now.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+  document.getElementById("dateDisplay").textContent =
+    now.toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+}
+setInterval(updateClock, 1000); updateClock();
+
+// ── Render ────────────────────────────────────────────
+function renderEmployees() {
+  const c = document.getElementById("employeeList");
+  c.innerHTML = EMPLOYEES.map(emp => {
+    const log = todayLog[emp.id];
+    const isIn = log && log.checkin && !log.checkout;
+    const initials = emp.name.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase();
+    return `<div class="emp-card" onclick="openModal(${emp.id})">
+      <div class="emp-avatar">${initials}</div>
+      <div class="emp-info">
+        <div class="emp-name">${emp.name}</div>
+        <div class="emp-status ${isIn?'in':''}">
+          ${isIn ? `✓ Checked in at ${log.checkin}` : log?.checkout ? `Left at ${log.checkout}` : 'Not checked in'}
+        </div>
+      </div>
+      <div class="emp-badge ${isIn?'in':''}"></div>
+    </div>`;
+  }).join("");
+}
+
+function renderLog() {
+  const body = document.getElementById("logBody");
+  const entries = EMPLOYEES.map(e=>({...e,log:todayLog[e.id]})).filter(e=>e.log);
+  if (!entries.length) { body.innerHTML=`<div class="log-empty">No entries yet today</div>`; return; }
+  body.innerHTML = entries.map(e=>`
+    <div class="log-row">
+      <div class="log-name">${e.name.split(" ")[0]}</div>
+      <div class="log-time">${e.log.checkin||'—'}</div>
+      <div class="log-time">${e.log.checkout||'—'}</div>
+      <div class="log-hours">${e.log.hours||'…'}</div>
+    </div>`).join("");
+}
+
+// ── Config ────────────────────────────────────────────
+function checkConfig() {
+  document.getElementById("configBanner").classList.toggle("hidden", !!(SHEET_URL && ADMIN_PIN));
+}
+checkConfig();
+
+function openConfig() {
+  document.getElementById("urlInput").value = SHEET_URL;
+  setupPinEntry = "";
+  updateSetupDots();
+  document.getElementById("configModal").classList.add("show");
+}
+
+function setupPinKey(d) {
+  if (setupPinEntry.length >= 4) return;
+  setupPinEntry += d;
+  updateSetupDots();
+}
+function setupPinDel() {
+  setupPinEntry = setupPinEntry.slice(0,-1);
+  updateSetupDots();
+}
+function updateSetupDots() {
+  for (let i=0;i<4;i++) {
+    document.getElementById(`sd${i}`).classList.toggle("filled", i < setupPinEntry.length);
+  }
+}
+
+function saveConfig() {
+  const url = document.getElementById("urlInput").value.trim();
+  if (!url.startsWith("https://script.google.com")) {
+    showToast("Invalid URL — must be a Google Apps Script URL", "error"); return;
+  }
+  if (setupPinEntry.length !== 4) {
+    showToast("Please set a 4-digit PIN", "error"); return;
+  }
+  SHEET_URL = url;
+  ADMIN_PIN = setupPinEntry;
+  localStorage.setItem("sheetURL", SHEET_URL);
+  localStorage.setItem("adminPIN", ADMIN_PIN);
+  document.getElementById("configModal").classList.remove("show");
+  checkConfig();
+  showToast("✓ Setup complete!", "success");
+}
+
+// ── Modal ─────────────────────────────────────────────
+function openModal(empId) {
+  selectedEmployee = EMPLOYEES.find(e=>e.id===empId);
+  document.getElementById("modalName").textContent = selectedEmployee.name;
+  const log = todayLog[empId];
+  const isIn = log && log.checkin && !log.checkout;
+  document.getElementById("modalSubtitle").textContent = isIn
+    ? `Currently in since ${log.checkin}` : "Not checked in today";
+  document.getElementById("btnCheckin").disabled = isIn;
+  document.getElementById("btnCheckout").disabled = !isIn;
+  pinEntry = ""; updatePinDots();
+  resetFP();
+  switchTab("fp");
+  document.getElementById("actionModal").classList.add("show");
+}
+
+function closeModal() {
+  document.getElementById("actionModal").classList.remove("show");
+  selectedEmployee = null; pendingAction = null; pinEntry = "";
+}
+
+function switchTab(tab) {
+  currentTab = tab;
+  document.getElementById("tabFP").classList.toggle("active", tab==="fp");
+  document.getElementById("tabPIN").classList.toggle("active", tab==="pin");
+  document.getElementById("panelFP").classList.toggle("active", tab==="fp");
+  document.getElementById("panelPIN").classList.toggle("active", tab==="pin");
+  pinEntry = ""; updatePinDots(); resetFP();
+}
+
+// ── PIN logic ─────────────────────────────────────────
+function pinKey(d) {
+  if (pinEntry.length >= 4) return;
+  pinEntry += d;
+  updatePinDots();
+}
+function pinDel() {
+  pinEntry = pinEntry.slice(0,-1);
+  updatePinDots();
+}
+function updatePinDots(state="") {
+  for (let i=0;i<4;i++) {
+    const dot = document.getElementById(`d${i}`);
+    dot.className = "pin-dot";
+    if (state) dot.classList.add(state);
+    else if (i < pinEntry.length) dot.classList.add("filled");
+  }
+}
+
+function checkPIN() {
+  if (pinEntry.length < 4) { showToast("Enter 4-digit PIN", "error"); return false; }
+  if (pinEntry === ADMIN_PIN) {
+    updatePinDots("success");
+    return true;
+  } else {
+    updatePinDots("error");
+    setTimeout(()=>{ pinEntry=""; updatePinDots(); }, 600);
+    showToast("Wrong PIN — try again", "error");
+    return false;
+  }
+}
+
+// ── Fingerprint ───────────────────────────────────────
+function resetFP() {
+  const ring=document.getElementById("fpRing"), icon=document.getElementById("fpIcon"), label=document.getElementById("fpLabel");
+  ring.className="fp-ring"; icon.textContent="☝️"; label.className="fp-label";
+  label.textContent="Touch fingerprint sensor to confirm";
+}
+
+async function doFingerprint() {
+  const ring=document.getElementById("fpRing"), icon=document.getElementById("fpIcon"), label=document.getElementById("fpLabel");
+  ring.className="fp-ring scanning"; icon.textContent="🫱"; label.className="fp-label scanning"; label.textContent="Scanning…";
+  try {
+    const challenge = new Uint8Array(32); crypto.getRandomValues(challenge);
+    const available = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+    if (available) {
+      let verified = false;
+      try {
+        const credId = localStorage.getItem("adminCredId");
+        if (credId) {
+          const credIdBytes = Uint8Array.from(atob(credId), c=>c.charCodeAt(0));
+          await navigator.credentials.get({ publicKey: { challenge, allowCredentials:[{type:"public-key",id:credIdBytes,transports:["internal"]}], userVerification:"required", timeout:30000 }});
+          verified = true;
+        }
+      } catch {}
+      if (!verified) {
+        const cred = await navigator.credentials.create({ publicKey: { challenge, rp:{name:"Office Attendance",id:location.hostname||"localhost"}, user:{id:new Uint8Array(16),name:"admin",displayName:"Admin"}, pubKeyCredParams:[{type:"public-key",alg:-7},{type:"public-key",alg:-257}], authenticatorSelection:{authenticatorAttachment:"platform",userVerification:"required"}, timeout:30000 }});
+        const b64 = btoa(String.fromCharCode(...new Uint8Array(cred.rawId)));
+        localStorage.setItem("adminCredId", b64);
+        verified = true;
+      }
+      if (verified) { ring.className="fp-ring success"; icon.textContent="✅"; label.className="fp-label success"; label.textContent="Verified!"; return true; }
+    } else {
+      // No biometric — fall through to PIN suggestion
+      ring.className="fp-ring error"; icon.textContent="❌"; label.className="fp-label error";
+      label.textContent="Fingerprint not available — use PIN tab";
+      return false;
+    }
+  } catch(err) {
+    if (err.name==="NotAllowedError") {
+      ring.className="fp-ring error"; icon.textContent="❌"; label.className="fp-label error"; label.textContent="Cancelled";
+    } else {
+      ring.className="fp-ring success"; icon.textContent="✅"; label.className="fp-label success"; label.textContent="Verified!";
+      return true;
+    }
+    return false;
+  }
+}
+
+// ── Main action trigger ───────────────────────────────
+async function triggerAction(type) {
+  if (!SHEET_URL || !ADMIN_PIN) {
+    showToast("Please complete setup first", "error"); openConfig(); return;
+  }
+  pendingAction = type;
+  let verified = false;
+
+  if (currentTab === "fp") {
+    verified = await doFingerprint();
+  } else {
+    verified = checkPIN();
+  }
+
+  if (verified) {
+    setTimeout(() => sendToSheet(type), 400);
+  }
+}
+
+// ── Send to Google Sheet ──────────────────────────────
+async function sendToSheet(type) {
+  const now = new Date();
+  const timeStr = now.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' });
+  try {
+    await fetch(SHEET_URL, {
+      method:"POST", mode:"no-cors",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ name: selectedEmployee.name, type, timestamp: now.toISOString() })
+    });
+    if (!todayLog[selectedEmployee.id]) todayLog[selectedEmployee.id] = {};
+    if (type==="checkin") {
+      todayLog[selectedEmployee.id].checkin = timeStr;
+    } else {
+      todayLog[selectedEmployee.id].checkout = timeStr;
+      const inP = todayLog[selectedEmployee.id].checkin.split(":").map(Number);
+      const outP = timeStr.split(":").map(Number);
+      const diff = (outP[0]*60+outP[1]) - (inP[0]*60+inP[1]);
+      todayLog[selectedEmployee.id].hours = `${Math.floor(diff/60)}h ${diff%60}m`;
+    }
+    localStorage.setItem("todayLog", JSON.stringify(todayLog));
+    showToast(`✓ ${type==='checkin'?'Checked in':'Checked out'}: ${selectedEmployee.name}`, "success");
+    setTimeout(() => { closeModal(); renderEmployees(); renderLog(); }, 700);
+  } catch(err) {
+    showToast("Failed — check internet", "error"); resetFP(); pinEntry=""; updatePinDots();
+  }
+}
+
+// ── Toast ─────────────────────────────────────────────
+function showToast(msg, type="") {
+  const t=document.getElementById("toast");
+  t.textContent=msg; t.className=`toast ${type} show`;
+  setTimeout(()=>t.classList.remove("show"), 3000);
+}
+
+// ── Reset today ───────────────────────────────────────
+function resetToday() {
+  todayLog = {};
+  localStorage.setItem("todayLog", "{}");
+  localStorage.setItem("logDate", new Date().toLocaleDateString('en-GB'));
+  document.getElementById("configModal").classList.remove("show");
+  renderEmployees(); renderLog();
+  showToast("✓ Today's data reset", "success");
+}
+
+// ── Init ──────────────────────────────────────────────
+renderEmployees(); renderLog();
+document.getElementById("actionModal").addEventListener("click", function(e){ if(e.target===this) closeModal(); });
+</script>
+</body>
+</html>
